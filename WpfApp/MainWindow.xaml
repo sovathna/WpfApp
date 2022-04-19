@@ -5,33 +5,12 @@
   xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
   xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
   mc:Ignorable="d"
-  Loaded="MainWindow_OnLoaded"
-  Title="MainWindow"
-  Height="450"
+  Title="Khmer Dictionary"
+  Height="480"
+  WindowStartupLocation="CenterScreen"
+  MinWidth="640"
+  MinHeight="320"
   Width="800">
-  <Grid>
-    <StackPanel
-      VerticalAlignment="Center"
-      Width="256"
-      Orientation="Vertical">
-      <TextBlock
-        Name="TextBlockTitle"
-        FontSize="18"
-        FontWeight="Bold"
-        TextAlignment="Center"
-        Text="Loading" />
-      <ProgressBar
-        Margin="0,16"
-        HorizontalAlignment="Center"
-        VerticalAlignment="Center"
-        Name="ProgressBar"
-        Height="10"
-        Width="256"
-        IsIndeterminate="True" />
-      <TextBlock
-        Name="TextBlockSub"
-        TextAlignment="Right"
-        Text="Loading" />
-    </StackPanel>
-  </Grid>
+  <Frame Name="MainFrame"/>
+
 </Window>

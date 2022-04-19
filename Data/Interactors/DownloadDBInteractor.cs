@@ -1,25 +1,31 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.IO.Compression;
 using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using Domain;
+using Domain.Interactors.DownloadDB;
 using Microsoft.Extensions.Logging;
 
-namespace Data;
+namespace Data.Interactors;
 
-public sealed class DownloadService : IDownloadService
+public class DownloadDbInteractor : IInteractor
 {
-  private static readonly string DOWNLOAD_URL =
+  private const string DownloadUrl =
     "https://github.com/sovathna/Khmer-Dictionary/raw/master/db/room_sqlite.zip";
+
+  private const string DatabasePath = "data/dict.db";
 
   private readonly HttpClient _client;
   private readonly ILogger _logger;
   private readonly DefaultScheduler _bgScheduler;
   private readonly SynchronizationContext _mainContext;
 
-  public DownloadService(HttpClient client, ILogger<DownloadService> logger,
-    DefaultScheduler bgScheduler, SynchronizationContext mainContext)
+  public DownloadDbInteractor(
+    HttpClient client,
+    ILogger<DownloadDbInteractor> logger,
+    DefaultScheduler bgScheduler,
+    SynchronizationContext mainContext
+  )
   {
     _client = client;
     _logger = logger;
@@ -27,14 +33,27 @@ public sealed class DownloadService : IDownloadService
     _mainContext = mainContext;
   }
 
-  IObservable<IGetAllResult> IDownloadService.GetAll()
+  public IObservable<IResult> Invoke()
   {
-    return Observable.Create(new Func<IObserver<IGetAllResult>, IDisposable>(
+    return Observable.Create(new Func<IObserver<IResult>, IDisposable>(
           observer =>
           {
-            observer.OnNext(new GetAllResultLoading());
+            observer.OnNext(new Loading());
+            if (File.Exists(DatabasePath))
+            {
+              observer.OnNext(new Done());
+              // observer.OnNext(new Failure(new Exception("custom error")));
+              observer.OnCompleted();
+              return Disposable.Empty;
+            }
+
+            if (!Directory.Exists("data"))
+            {
+              Directory.CreateDirectory("data");
+            }
+            
             var request = new HttpRequestMessage();
-            request.RequestUri = new Uri(DOWNLOAD_URL);
+            request.RequestUri = new Uri(DownloadUrl);
             request.Method = HttpMethod.Get;
             var response = _client.Send(request);
 
@@ -44,8 +63,9 @@ public sealed class DownloadService : IDownloadService
             foreach (var entry in zipStream.Entries)
             {
               var stream = entry.Open();
-              var fileStream = File.Create("dict.db");
-              var l = entry.Length / 1_000_000D;
+              var fileStream = File.Create(DatabasePath);
+              var ratio = (float)entry.Length / entry.CompressedLength;
+              var l = entry.Length / 1_000_000F / ratio;
               var totalRead = 0L;
               var buffer = ArrayPool<byte>.Shared.Rent(8192);
               while (true)
@@ -54,10 +74,11 @@ public sealed class DownloadService : IDownloadService
                 if (read <= 0) break;
                 fileStream.Write(buffer, 0, read);
                 totalRead += read;
-                var tmpRead = totalRead / 1_000_000D;
-                var str = $"progress: {tmpRead.ToString("F")} of {l.ToString("F")}MB";
+                var tmpRead = totalRead / 1_000_000F / ratio;
+                var str =
+                  $"progress: {tmpRead.ToString("F")} of {l.ToString("F")}MB";
                 _logger.LogInformation("{Str}", str);
-                observer.OnNext(new GetAllResultSuccess(str));
+                observer.OnNext(new Downloading(tmpRead, l));
               }
 
               stream.Dispose();
@@ -71,13 +92,13 @@ public sealed class DownloadService : IDownloadService
             responseStream.Dispose();
             response.Dispose();
             request.Dispose();
-
+            observer.OnNext(new Done());
             observer.OnCompleted();
             return Disposable.Empty;
           }
         )
       ).Buffer(TimeSpan.FromMilliseconds(500))
-      .Select(o => o.LastOrDefault() ?? new GetAllResultSuccess("Loading..."))
+      .Select(o => o.LastOrDefault() ?? new Loading())
       .SubscribeOn(_bgScheduler)
       .ObserveOn(_mainContext);
   }
